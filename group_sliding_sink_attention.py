@@ -15,17 +15,6 @@ def _gqa_attn(query, key, value, attention_mask=None, scale_attn_weights=False,
         raise ValueError(f"Expected query, key, and value to be 4-dimensional, but got shapes "
                          f"{query.shape}, {key.shape}, and {value.shape}.")
 
-
-    if sink_tokens > 0:
-        # Concatenate sink tokens
-        sink_query = query[:, :, :sink_tokens, :]
-        sink_key = key[:, :, :sink_tokens, :]
-        sink_value = value[:, :, :sink_tokens, :]
-
-        query = torch.cat([sink_query, query], dim=2)
-        key = torch.cat([sink_key, key], dim=2)
-        value = torch.cat([sink_value, value], dim=2)
-
     print(f"query_len = {query.shape[2]}, key_len = {key.shape[2]}, value_len = {value.shape[2]}")
 
 
@@ -122,9 +111,6 @@ def _gqa_attn(query, key, value, attention_mask=None, scale_attn_weights=False,
         attn_weights = torch.where(causal_mask, attn_weights.to(attn_weights.dtype), mask_value)
         # print("attn_weights:", attn_weights)
 
-    # This keeps the inputs in a range where softmax is numerically stable.
-    attn_weights = torch.clamp(attn_weights, min=-10, max=10)
-
     # Softmax normalization to get the attention scores
     attn_weights = nn.functional.softmax(attn_weights, dim=-1)
 
@@ -135,6 +121,34 @@ def _gqa_attn(query, key, value, attention_mask=None, scale_attn_weights=False,
 
     # Compute the output by multiplying the attention scores with the value tensor.
     attn_output = torch.matmul(attn_weights, value)
+
+
+    if sink_tokens > 0:
+        sink_query = query[:, :, :sink_tokens, :]
+
+        if n_groups > 1:
+            sink_query = sink_query.mean(dim=1)  # or sink_query.sum(dim=1)
+
+        sink_key = key[:, :, :sink_tokens, :]
+        sink_value = value[:, :, :sink_tokens, :]
+
+        # Compute the sink attention
+        print(f"sink_query.shape = {sink_query.shape}")
+        print(f"sink_key.transpose(-2, -1).shape = {sink_key.transpose(-2, -1).shape}")
+        sink_attn = nn.functional.softmax(sink_query @ sink_key.transpose(-2, -1) / scale_factor, dim=-1)  # Shape: [B, num_sinks, L]
+        print(f"sink_attn.shape = {sink_attn.shape}")
+        print(f"sink_value.shape = {sink_value.shape}")
+        sink_output = sink_attn @ sink_value  # Shape: [B, num_sinks, d_model]
+
+        # Add padding to sink_output
+        pad_len = attn_output.size(2) - sink_output.size(2)
+        sink_output = F.pad(sink_output, (0, 0, 0, pad_len))
+
+        # Concatenate the sink output and the main output
+        print(f"sink_output.shape = {sink_output.shape}")
+        print(f"attn_output.shape = {attn_output.shape}")
+        attn_output = torch.cat([sink_output, attn_output], dim=1)  # Shape: [B, L+num_sinks, d_model]
+
 
     return attn_output, attn_weights
 
@@ -163,10 +177,10 @@ if __name__ == '__main__':
     # Set number of sink tokens
     # For StreamingLLM, see paper : Efficient Streaming Language Models with Attention Sinks
     # http://arxiv.org/abs/2309.17453
-    sink_tokens = 0
+    sink_tokens = 2
 
 
-    shape = (batch_size, query_len+sink_tokens, query_len+sink_tokens)
+    shape = (batch_size, query_len, query_len)
     attention_mask = torch.zeros(shape)
 
     # Example attention mask, 1s indicate positions we want to include, -inf (or very large negative numbers) indicate positions to exclude
@@ -175,7 +189,7 @@ if __name__ == '__main__':
 
 
     # Run the function
-    attn_output, attn_weights = _gqa_attn(query, key, value, attention_mask, scale_attn_weights=True, causal_mask_flag=True, dropout=0.1, local_window_size=3, sink_tokens=sink_tokens)
+    attn_output, attn_weights = _gqa_attn(query, key, value, attention_mask, scale_attn_weights=True, causal_mask_flag=True, dropout=0.0, local_window_size=3, sink_tokens=sink_tokens)
 
     print("Attention Output:", attn_output.shape)
     print("Attention Weights:", attn_weights.shape)
