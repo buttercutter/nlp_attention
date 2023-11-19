@@ -1,0 +1,167 @@
+Here are some additional details on how the proportional limit enables relating discrete covariance updates to the continuous neural SDE:
+
+    In a proportional limit, the number of layers L and width n satisfy L/n → d/w for some constant ratio d/w as n → ∞.
+
+    This constant ratio allows defining a continuous "time" t = l/n ∈ [0, T] where T = d/w and l is the layer index.
+
+    As n → ∞, there are infinitesimally small gaps 1/n between discrete layers l and l+1 in this pseudo-continuous time.
+
+    The attention operation is shown to give covariance updates of size O(1/n) (as explained earlier).
+
+    This means the discrete covariance updates Vl+1 - Vl are small (O(1/n)) for large n.
+
+    These small updates can be embedded into the continuous time t ∈ [0, T] as n → ∞.
+
+    Specifically, the evolution of Vl in discrete layers can be approximated by discretizing the SDE dVt using step size 1/n.
+
+    This gives updates like Vl+1 ≈ Vl + (SDE drift and diffusion terms) that converge to the continuous SDE.
+
+    So the constant d/w ratio provides a continuous notion of time to embed discrete steps into.
+
+    And the O(1/n) update size allows approximating the SDE via these discrete updates.
+
+    Together this connects the discrete covariance evolution to the solution of the continuous SDE.
+
+In summary, the key is that the temperature scaling leads to O(1/n) terms in the Taylor expansion of the centered softmax attention matrix A. This provides the small update sizes needed to relate the discrete updates to the continuous SDE.
+
+
+The following is the mathematical steps that lead to that Taylor expansion approximation for the centered softmax attention matrix A. Here is a derivation:
+
+We start with the definition of A:
+
+A = I + Softmax(τ-1Y) - (1/m)11⊤
+
+Where Softmax(Z)ij = exp(Zij) / Σk exp(Zik)
+
+Let's focus just on approximating the Softmax term using Taylor expansion around 0:
+
+Softmax(τ-1Y) ≈ Softmax(0) + τ-1Y Softmax'(0) + (τ-1)2/2 Y2 Softmax''(0) + ...
+
+Where:
+Softmax(0) = (1/m)11⊤
+
+And since Softmax'(Z) = diag(Softmax(Z)) - Softmax(Z)Softmax(Z)⊤ :
+
+Softmax'(0) = I - (1/m)11⊤
+Softmax''(0) = diag((1/m)I - (1/m^2)11^T)
+
+Plugging these in gives:
+
+Softmax(τ-1Y) ≈ (1/m)11⊤ + τ-1(I - (1/m)11⊤)Y + (τ-1)2/2 Y2 Softmax''(0) + ...
+
+
+Now plugging everything into the taylor expansion of A = I + Softmax(τ-1Y) - (1/m)11⊤ :
+
+A ≈ I + τ-1(I - (1/m)11^T)Y + (τ-1)^2/2 Y^2 diag((1/m)I - (1/m^2)11^T)
+
+Where: 
+
+τ = τ0√(nnk)
+
+This τ gives a scaling of 1/τ = 1/(τ0√(nnk))
+
+Contributing a factor of 1/√n. 
+
+Now looking at the second order term:
+
+(τ-1)^2/2 Y^2 diag((1/m)I - (1/m^2)11^T)
+
+The (τ-1)^2 gives a factor of 1/n
+
+Y^2 diag((1/m)I - (1/m^2)11^T) is the centralized second moment of Y
+
+This is O(1/n) due to the centered Y matrix
+
+So the second order term contributes:
+
+1/n from (τ-1)^2 
+1/n from the centered second moment
+
+Giving an overall 1/n scaling.
+
+In summary, the key factors are:
+
+- 1/τ scaling with τ containing √n, giving 1/√n
+- 1/τ^2 in the 2nd order term, giving 1/n 
+- Centered Y matrix making the 2nd moment O(1/n)
+
+
+
+
+
+
+The softmax function is used in machine learning to convert a vector of arbitrary values to a probability distribution. It is defined as follows:
+
+For a vector `z` of length `n`, the softmax of its `i`-th component is defined as:
+
+```
+softmax(z_i) = exp(z_i) / Σ(exp(z_j)) for j = 1, ..., n
+```
+
+The partial derivative of the softmax function with respect to its inputs can be a bit tricky because of the summation in the denominator. The derivative will be different depending on whether we're taking the derivative with respect to the same input that we're applying the softmax to (`i=j`) or a different input (`i≠j`).
+
+1. **Case i = j:**
+
+    ```
+    Let's denote s_i = softmax(z_i) for brevity.
+
+    The derivative ∂s_i/∂z_i is:
+
+    ∂s_i/∂z_i = ∂[exp(z_i) / Σ(exp(z_j))] / ∂z_i
+               = [exp(z_i) * Σ(exp(z_j)) - exp(z_i) * exp(z_i)] / [Σ(exp(z_j))]^2
+               = s_i * (1 - s_i)
+    ```
+
+2. **Case i ≠ j:**
+
+    ```
+    The derivative ∂s_i/∂z_j is:
+
+    ∂s_i/∂z_j = ∂[exp(z_i) / Σ(exp(z_j))] / ∂z_j
+               = [-exp(z_i) * exp(z_j)] / [Σ(exp(z_j))]^2
+               = -s_i * s_j
+    ```
+
+So, the derivative of the softmax function with respect to its inputs can be compactly represented as follows:
+
+```
+∂s_i/∂z_j = s_i * (δ_ij - s_j)
+```
+
+where `δ_ij` is the Kronecker delta, which is `1` when `i=j` and `0` when `i≠j`. This formulation shows that when `i=j`, we have `∂s_i/∂z_i = s_i * (1 - s_i)`. And when `i≠j`, we have `∂s_i/∂z_j = -s_i * s_j`.
+
+
+
+
+The softmax function is:
+
+softmax(z)_i = e^{z_i} / ∑_j e^{z_j}
+
+The first derivative is:
+
+∂softmax(z)_i/∂z_j = softmax(z)_i (δ_ij - softmax(z)_j)
+
+In matrix form:
+
+∂softmax(z)/∂z = diag(softmax(z)) - softmax(z)softmax(z)^T
+
+To get the second derivative, we take the derivative of the above:
+
+∂^2softmax(z)/∂z∂z = ∂/∂z [diag(softmax(z)) - softmax(z)softmax(z)^T]
+
+Applying product rule:
+
+= diag(∂softmax(z)/∂z) - ∂softmax(z)/∂z softmax(z)^T - softmax(z) ∂softmax(z)^T/∂z
+
+The full second derivative is:
+
+∂2softmax(z)/∂z2 = diag(diag(softmax(z)) - softmax(z)softmax(z)^T) - (diag(softmax(z)) - softmax(z)softmax(z)^T)softmax(z)^T - softmax(z)(diag(softmax(z)) - softmax(z)softmax(z)^T)^T
+
+Evaluating at z=0, where:
+diag(softmax(0)) = (1/m)I
+softmax(0) = (1/m)11^T
+
+The first term:
+diag(diag(softmax(0)) - softmax(0)softmax(0)^T)
+= diag((1/m)I - (1/m^2)11^T)
+
